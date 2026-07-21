@@ -125,40 +125,57 @@ async def create_task(task: TaskCreate):
 
 
 # ---------------------------------------------------------------------------
-# Remaining Endpoints (Temporary Stage 0 placeholders - will update in Stage 3)
+# Stage 3: Update (PUT) & Delete (DELETE) with SQLite
 # ---------------------------------------------------------------------------
-tasks = [
-    {"id": 1, "title": "Buy boba tea", "done": False},
-    {"id": 2, "title": "Go grocery shopping", "done": False},
-    {"id": 3, "title": "Clean the house", "done": True},
-]
-
-
 @app.put("/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate):
-    task = next((t for t in tasks if t["id"] == task_id), None)
-    if task is None:
-        return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
+    """Update a task's title and/or done status in tasks.db."""
+    with Session(engine) as session:
+        statement = select(Task).where(Task.id == task_id)
+        task = session.exec(statement).first()
 
-    if update.title is None and update.done is None:
-        return JSONResponse(status_code=400, content={"error": "provide title and/or done to update"})
+        if task is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Task {task_id} not found"}
+            )
 
-    if update.title is not None and not update.title.strip():
-        return JSONResponse(status_code=400, content={"error": "title cannot be empty"})
+        if update.title is None and update.done is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "provide title and/or done to update"}
+            )
 
-    if update.title is not None:
-        task["title"] = update.title
-    if update.done is not None:
-        task["done"] = update.done
+        if update.title is not None and not update.title.strip():
+            return JSONResponse(
+                status_code=400,
+                content={"error": "title cannot be empty"}
+            )
 
-    return task
+        if update.title is not None:
+            task.title = update.title.strip()
+        if update.done is not None:
+            task.done = update.done
+
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+        return task
 
 
 @app.delete("/tasks/{task_id}", status_code=204)
 async def delete_task(task_id: int):
-    task = next((t for t in tasks if t["id"] == task_id), None)
-    if task is None:
-        return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
+    """Delete a task from tasks.db. Returns 204 with no body, or 404 if missing."""
+    with Session(engine) as session:
+        statement = select(Task).where(Task.id == task_id)
+        task = session.exec(statement).first()
 
-    tasks.remove(task)
-    return Response(status_code=204)
+        if task is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Task {task_id} not found"}
+            )
+
+        session.delete(task)
+        session.commit()
+        return Response(status_code=204)
