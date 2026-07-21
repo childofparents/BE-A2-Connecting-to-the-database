@@ -5,7 +5,7 @@ from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
-from sqlmodel import SQLModel, Field, Session, create_engine, select
+from sqlmodel import SQLModel, Field, Session, create_engine, select, col
 
 # ---------------------------------------------------------------------------
 # Stage 0: Create database & tables
@@ -84,27 +84,19 @@ async def health():
 # ---------------------------------------------------------------------------
 # Stage 1: Read endpoints backed by SQLite
 # ---------------------------------------------------------------------------
+
 @app.get("/tasks")
-async def get_tasks():
-    """List all tasks live from tasks.db."""
+async def get_tasks(search: Optional[str] = None):
+    """List all tasks live from tasks.db, with optional SQL-level title search."""
     with Session(engine) as session:
         statement = select(Task)
+
+        if search and search.strip():
+            # Uses col() and contains() to safely compile to: WHERE title LIKE '%search%'
+            statement = statement.where(col(Task.title).contains(search.strip()))
+
         tasks = session.exec(statement).all()
         return tasks
-
-
-@app.get("/tasks/{task_id}")
-async def get_task(task_id: int):
-    """Get a single task by id from tasks.db, or 404 if missing."""
-    with Session(engine) as session:
-        statement = select(Task).where(Task.id == task_id)
-        task = session.exec(statement).first()
-        if task is None:
-            return JSONResponse(
-                status_code=404,
-                content={"error": f"Task {task_id} not found"}
-            )
-        return task
 
 
 # ---------------------------------------------------------------------------
