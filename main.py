@@ -108,24 +108,30 @@ async def get_task(task_id: int):
 
 
 # ---------------------------------------------------------------------------
-# Remaining Endpoints (Temporary Stage 0 placeholders - will update in Stages 2 & 3)
+# Stage 2: Create endpoint (POST) inserted into SQLite
+# ---------------------------------------------------------------------------
+@app.post("/tasks", status_code=201)
+async def create_task(task: TaskCreate):
+    """Create a new task in tasks.db with done set to false."""
+    if not task.title or not task.title.strip():
+        return JSONResponse(status_code=400, content={"error": "title is required"})
+
+    new_task = Task(title=task.title.strip(), done=False)
+    with Session(engine) as session:
+        session.add(new_task)
+        session.commit()
+        session.refresh(new_task)
+        return new_task
+
+
+# ---------------------------------------------------------------------------
+# Remaining Endpoints (Temporary Stage 0 placeholders - will update in Stage 3)
 # ---------------------------------------------------------------------------
 tasks = [
     {"id": 1, "title": "Buy boba tea", "done": False},
     {"id": 2, "title": "Go grocery shopping", "done": False},
     {"id": 3, "title": "Clean the house", "done": True},
 ]
-
-
-@app.post("/tasks", status_code=201)
-async def create_task(task: TaskCreate):
-    if not task.title or not task.title.strip():
-        return JSONResponse(status_code=400, content={"error": "title is required"})
-
-    next_id = max((t["id"] for t in tasks), default=0) + 1
-    new_task = {"id": next_id, "title": task.title, "done": False}
-    tasks.append(new_task)
-    return new_task
 
 
 @app.put("/tasks/{task_id}")
