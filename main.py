@@ -8,13 +8,8 @@ from typing import Optional
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 
 # ---------------------------------------------------------------------------
-# Stage 0: create your database
+# Stage 0: Create database & tables
 # ---------------------------------------------------------------------------
-
-# Anchor tasks.db to this file's own folder instead of the process's current
-# working directory. Working-directory can silently differ depending on how
-# uvicorn/reloaders spawn subprocesses or which terminal tab you're in — this
-# guarantees the app always reads/writes the same physical file.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sqlite_file_name = os.path.join(BASE_DIR, "tasks.db")
 sqlite_url = f"sqlite:///{sqlite_file_name}"
@@ -51,7 +46,6 @@ def seed_tasks():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Runs once when the app starts up, before it accepts any requests.
     create_db_and_tables()
     seed_tasks()
     yield
@@ -59,55 +53,72 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Stage 2 Example tasks
-# NOTE: left untouched on purpose for Stage 0 — the endpoints below still read
-# from this in-memory list. Stage 1 is where GET /tasks switches over to SQL.
+
+# ---------------------------------------------------------------------------
+# Request/Response Models
+# ---------------------------------------------------------------------------
+class TaskCreate(BaseModel):
+    title: Optional[str] = None
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    done: Optional[bool] = None
+
+
+# ---------------------------------------------------------------------------
+# API Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/")
+async def root():
+    """Describe this API and list its main endpoints."""
+    return {"name": "Task API", "version": "1.0", "endpoint": ["/tasks"]}
+
+
+@app.get("/health")
+async def health():
+    """Check that the server is up and running."""
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: Read endpoints backed by SQLite
+# ---------------------------------------------------------------------------
+@app.get("/tasks")
+async def get_tasks():
+    """List all tasks live from tasks.db."""
+    with Session(engine) as session:
+        statement = select(Task)
+        tasks = session.exec(statement).all()
+        return tasks
+
+
+@app.get("/tasks/{task_id}")
+async def get_task(task_id: int):
+    """Get a single task by id from tasks.db, or 404 if missing."""
+    with Session(engine) as session:
+        statement = select(Task).where(Task.id == task_id)
+        task = session.exec(statement).first()
+        if task is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"Task {task_id} not found"}
+            )
+        return task
+
+
+# ---------------------------------------------------------------------------
+# Remaining Endpoints (Temporary Stage 0 placeholders - will update in Stages 2 & 3)
+# ---------------------------------------------------------------------------
 tasks = [
     {"id": 1, "title": "Buy boba tea", "done": False},
     {"id": 2, "title": "Go grocery shopping", "done": False},
     {"id": 3, "title": "Clean the house", "done": True},
 ]
 
-# Stage 3
-class TaskCreate(BaseModel):
-    title: Optional[str] = None
 
-# Stage 4
-class TaskUpdate(BaseModel):
-    title: Optional[str] = None
-    done: Optional[bool] = None
-
-# Stage 1
-@app.get("/")
-async def root():
-    """Describe this API and list its main endpoints."""
-    return {"name": "Task API", "version": "1.0", "endpoint": ["/tasks"]}
-
-#Stage 1
-@app.get("/health")
-async def health():
-    """Check that the server is up and running."""
-    return {"status": "ok"}
-
-# Stage 2 Read (GET) - List of tasks
-@app.get("/tasks")
-async def get_tasks():
-    """List all tasks currently in memory."""
-    return tasks
-
-# Stage 2 Read (GET) - A specific task
-@app.get("/tasks/{task_id}")
-async def get_task(task_id: int):
-    """Get a single task by its id, or 404 if it does not exist."""
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
-    return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
-
-# Stage 3 Create (POST)
 @app.post("/tasks", status_code=201)
 async def create_task(task: TaskCreate):
-    """Create a new task from a JSON body containing a title."""
     if not task.title or not task.title.strip():
         return JSONResponse(status_code=400, content={"error": "title is required"})
 
@@ -116,10 +127,9 @@ async def create_task(task: TaskCreate):
     tasks.append(new_task)
     return new_task
 
-# Stage 4 Update (PUT)
+
 @app.put("/tasks/{task_id}")
 async def update_task(task_id: int, update: TaskUpdate):
-    """Update a task's title and/or done status, 404 if unknown, 400 if invalid."""
     task = next((t for t in tasks if t["id"] == task_id), None)
     if task is None:
         return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
@@ -137,10 +147,9 @@ async def update_task(task_id: int, update: TaskUpdate):
 
     return task
 
-# Stage 4 Delete (DELETE) a task
+
 @app.delete("/tasks/{task_id}", status_code=204)
 async def delete_task(task_id: int):
-    """Delete a task by id. Returns 204 with no body, or 404 if unknown."""
     task = next((t for t in tasks if t["id"] == task_id), None)
     if task is None:
         return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
